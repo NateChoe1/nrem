@@ -57,6 +57,8 @@
  *     struct {
  *         uint64_t next;               The next event that occurs at this same
  *                                      time stamp
+ *         uint64_t prev;               The location of the pointer to this
+ *                                      event
  *         uint64_t functions;          Unused for now, MUST be 0
  *         uint64_t len;                The length of this event name
  *         char event[len];             The event name itself
@@ -165,7 +167,7 @@ static int datecreate(char *path, datefile *ret) {
 		return -1;
 	}
 
-	/* Write header padding */
+	/* Write reserved area */
 	for (int i = 0; i < 16; ++i) {
 		if (fputc(0, file) == EOF) {
 			return -1;
@@ -190,7 +192,6 @@ static int datecreate(char *path, datefile *ret) {
 	if (writeu64(bit1loc, file)) {
 		return -1;
 	}
-	fflush(file);
 
 	ret->file = file;
 	ret->bit1 = bit1loc;
@@ -297,9 +298,18 @@ int dateadd(struct event *event, datefile *file) {
 
 	/* Write event data */
 	if (writeu64(oldhead, file->file) ||  /* next (prepend to linkedlist) */
+	    writeu64(leafpos, file->file) ||  /* prev (leaf node) */
 	    writeu64(0, file->file) ||        /* functions (0) */
 	    writeu64(eventlen, file->file) || /* event len */
-	    fwrite(event->name, eventlen, 1, file->file) < 1) { /* event name */
+	    fwrite(event->name, eventlen, 1, file->file) < 1 || /* event name */
+	    fflush(file->file) == EOF         /* flush file */ ) {
+		return -1;
+	}
+
+	/* Update the old head's prev value */
+	if (oldhead != 0 && 
+		(fseek(file->file, oldhead+8, SEEK_SET) == -1 ||
+	         writeu64(newhead, file->file))) {
 		return -1;
 	}
 
@@ -308,6 +318,8 @@ int dateadd(struct event *event, datefile *file) {
 	    writeu64(newhead, file->file)) {
 		return -1;
 	}
+
+	event->id = newhead;
 
 	return 0;
 }
@@ -412,8 +424,9 @@ static int readtime(datefile *file, struct eventlist *events,
 			events->events = newevents;
 		}
 
-		uint64_t next, functions, len;
+		uint64_t prev, next, functions, len;
 		if (readu64(&next, file->file) ||
+		    readu64(&prev, file->file) ||
 		    readu64(&functions, file->file) ||
 		    readu64(&len, file->file)) {
 			return -1;
@@ -428,6 +441,7 @@ static int readtime(datefile *file, struct eventlist *events,
 			return -1;
 		}
 		event->name[len] = '\0';
+		event->id = iter;
 
 		iter = next;
 	}
@@ -440,4 +454,24 @@ void freeeventlist(struct eventlist *list) {
 	}
 	free(list->events);
 	free(list);
+}
+
+int dateremove(datefile *file, uint64_t id) {
+	uint64_t prev, next;
+	if (fseek(file->file, id, SEEK_SET) == -1 ||
+	    readu64(&next, file->file) ||
+	    readu64(&prev, file->file)) {
+		return -1;
+	}
+
+	if (fseek(file->file, prev, SEEK_SET) == -1 ||
+	    writeu64(next, file->file)) {
+		return -1;
+	}
+	if (next != 0 &&
+		(fseek(file->file, next+8, SEEK_SET) == -1 ||
+		 writeu64(prev, file->file))) {
+		return -1;
+	}
+	return 0;
 }

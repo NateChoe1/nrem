@@ -31,8 +31,12 @@ int main(int argc, char **argv) {
 		struct eventlist *events;
 		events = datesearch(&f, strtoull(argv[3], NULL, 10), strtoull(argv[4], NULL, 10));
 		for (int i = 0; i < events->len; ++i) {
-			printf("%lu\t%s\n", events->events[i].time, events->events[i].name);
+			printf("%lu\t%lu\t%s\n", events->events[i].time, events->events[i].id, events->events[i].name);
 		}
+		return 0;
+	}
+	if (strcmp(argv[2], "remove") == 0) {
+		dateremove(&f, strtoull(argv[3], NULL, 10));
 		return 0;
 	}
 	fprintf(stderr, "Invalid command %s\n", argv[2]);
