@@ -125,6 +125,11 @@ static int nremclisearch(int argc, char **argv) {
 }
 
 static int nremcliremove(int argc, char **argv) {
+	if (argc < 2) {
+		fprintf(stderr, "Usage: %s [event id]\n", argv[0]);
+		return 1;
+	}
+	dateremove(&f, strtoull(argv[1], NULL, 10));
 	return 0;
 }
 
