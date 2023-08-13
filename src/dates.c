@@ -99,6 +99,17 @@ WRITE_FUNC(8)
 WRITE_FUNC(64)
 #undef WRITE_FUNC
 
+/* Unsigned -> signed 64 bit int conversion. Note that this implementation does
+ * create two zeros*/
+static inline int64_t us64(uint64_t v) {
+	return v < (1llu << 63) ? v : (-(int64_t) (v ^ (1llu << 63)));
+}
+
+/* Opposite of us64 */
+static inline uint64_t su64(int64_t v) {
+	return v >= 0 ? v : (((uint64_t) (-v)) | (1llu << 63));
+}
+
 /* Creates a datefile. This function will truncate `path` */
 static int datecreate(char *path, datefile *ret);
 
@@ -210,8 +221,8 @@ int dateadd(struct event *event, datefile *file) {
 	}
 
 	/* Go through each bit of the timestamp */
-	for (uint64_t mask = 1lu << (file->bitn-1); mask > 0; mask >>= 1) {
-		int bit = !!(event->time & mask);
+	for (uint64_t mask = 1llu << (file->bitn-1); mask > 0; mask >>= 1) {
+		int bit = !!(su64(event->time) & mask);
 		uint64_t next;
 		long field_pos;
 
@@ -324,7 +335,7 @@ int dateadd(struct event *event, datefile *file) {
 	return 0;
 }
 
-struct eventlist *datesearch(datefile *file, uint64_t start, uint64_t end) {
+struct eventlist *datesearch(datefile *file, int64_t start, int64_t end) {
 	struct eventlist *ret;
 	int status;
 	if ((ret = malloc(sizeof *ret)) == NULL) {
@@ -337,7 +348,7 @@ struct eventlist *datesearch(datefile *file, uint64_t start, uint64_t end) {
 		return NULL;
 	}
 
-	status = datesearchrecursive(file, ret, start, end,
+	status = datesearchrecursive(file, ret, su64(start), su64(end),
 			0, 0, file->bitn, file->bit1);
 	if (status) {
 		freeeventlist(ret);
@@ -433,7 +444,7 @@ static int readtime(datefile *file, struct eventlist *events,
 		}
 
 		struct event *event = events->events + (events->len++);
-		event->time = time;
+		event->time = us64(time);
 		if ((event->name = malloc(len+1)) == NULL) {
 			return -1;
 		}

@@ -3,7 +3,7 @@ OUT = build/nrem
 INSTALLDIR = /usr/bin
 
 _CFLAGS = $(CFLAGS) -Isrc/include
-__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -Wshadow
+__CFLAGS = $(_CFLAGS) -Wall -Wpedantic
 LDFLAGS =
 __LDFLAGS = $(LDFLAGS)
 HEADERS = $(wildcard src/include/*.h)

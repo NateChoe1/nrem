@@ -1,0 +1,134 @@
+.TH NREM-CLI 1
+.SH NAME
+nrem cli \- A simple reminder program
+
+.SH SYNOPSIS
+.EX
+nrem cli
+        add [time] [event name]
+        search [start time] [end time] (format)
+        remove [id]
+.EE
+
+.SH DESCRIPTION
+\fInrem\fP associates dates and times with events. It has two interfaces: a cli,
+and a tui. This man page is for the cli.
+
+The cli has three subcommands: \fIadd\fP, \fIsearch\fP, and \fIremove\fP.
+\fIadd\fP creates a new event, \fIsearch\fP shows all events within a certain
+time frame, and \fIremove\fP removes an event. 
+
+.SH ADD
+The \fIadd\fP command takes two arguments: the time of the event and the event
+name.
+
+.EX
+    $ nrem cli add 2023-08-10,10:00pm "Doctor's appointment"
+.EE
+
+.SH SEARCH
+The \fIsearch\fP command has two required arguments: the start time and end time
+of the search. The command also optionally accepts the format of the output.
+
+.EX
+    $ nrem cli search now now+2w DATE,TIME12,NAME
+    2023-08-10	10:00:00 PM	Business meeting
+    2023-08-11	9:00:00 AM	Trash day
+.EE
+
+The output format is a comma separated list of fields, each of which are
+tab-delimited in the output. The following table shows all the fields and their
+meanings:
+
+.TS
+tab(|);
+l l
+l l .
+Field|Meaning
+=
+DATE|The date of the event in ISO 8601 format (yyyy-mm-dd)
+TIME12|The time of the event in the format \fIhh:mm:ss AM/PM\fP
+TIME24|The time of the event in the format \fIhh:mm:ss\fP
+NAME|The name of the event
+ID|The ID of the event
+.TE
+
+The default format is \fIDATE,TIME12,NAME\fP
+
+.SH REMOVE
+The remove command accepts an event ID and removes that event
+
+.EX
+    $ nrem cli remove 2412
+.EE
+
+.SH DATES
+Dates in command arguments are specified through strings. Each string begins
+with an absolute time and possibly contains several offsets. Each offset is
+prepended by a either a '+' or '~' character. As a formal grammar:
+
+.EX
+    date :=
+            absolute-time
+    |       absolute-time offsets
+    
+    offsets :=
+            offset
+    |       offsets offset
+    
+    offset :=
+            '+' offset-value
+    |       '~' offset-value
+.EE
+
+Absolute times are either \fInow\fP for the current time, a date in ISO-8601
+format, a time, or both separated by a comma. As a formal grammar:
+
+.EX
+    absolute-time :=
+            'now'                       ; The current time
+    |       iso-date                    ; A specific date at midnight
+    |       time                        ; A specific time today
+    |       iso-date ',' time           ; A specific time at a specific date
+    
+    iso-date :=                         ; YYYY-MM-DD date
+            number '-' number '-' number
+    
+    time :=
+            hour-minute 'AM'            ; A 12 hour time AM
+            hour-minute 'PM'            ; A 12 hour time PM
+            hour-minute                 ; A 24 hour time
+    
+    hour-minute :=
+            number                      ; 9PM
+    |       number ':' number           ; 9:12PM
+    |       number ':' number ':' number; 9:12:34PM
+.EE
+
+A relative time is some number followed by a unit, and can be used in
+conjunction with absolute times. For example, 'now' means now and '2w' means 2
+weeks, so 'now+2w' means two weeks from now, and 'now~2w' means 2 weeks ago.
+Note that the 'ago' operator is NOT the minus sign '-', but the tilde sign '~'.
+This is because the minus sign is already used by ISO-8601 dates. As a formal
+grammar:
+
+.EX
+    offset-value :=
+            number value
+
+    number :=
+            digit
+    |       number digit
+
+    value :=
+            'w'                         ; weeks
+    |       'd'                         ; days
+    |       'h'                         ; hours
+    |       'm'                         ; minutes
+    |       's'                         ; seconds
+.EE
+
+.SH FILES
+\fIdatefile\fP
+	$DATEFILE
+	$HOME/.config/nrem/datefile
