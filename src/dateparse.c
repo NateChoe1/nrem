@@ -105,7 +105,7 @@ TS(absolute_time_parse, if (getlocaltime(&ret->tm)) { E },
 T(iso_date,
 	R(number, ret->tm.tm_year = ret->num - 1900;
 	L("-",
-	R(number, ret->tm.tm_mon = ret->num;
+	R(number, ret->tm.tm_mon = ret->num-1; /* Jan = 0 */
 	L("-",
 	R(number, ret->tm.tm_mday = ret->num, E), E), E), E), E))
 
