@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include <dates.h>
+#include <tests.h>
 
 /* datefile format
  * NOTE: all integer values are stored in big endian (most significant byte
@@ -22,9 +23,10 @@
  *     };
  *
  * datefiles contain a binary tree with a max depth of `bitn`. Events are placed
- * into a linked list represented in this binary tree as a leaf whose position
+ * into a linked list represented in this binary tree as a node whose position
  * is determined by the binary representation of the UNIX timestamp of the
- * event.
+ * event. An event inside of a node indicates that all the timestamps below
+ * that node contain that event.
  *
  *     EXAMPLE EVENT INSERTION
  *       1. The UNIX timestamp of the event is obtained (truncated to 8 bits for
@@ -32,25 +34,40 @@
  *             75 seconds after epoch
  *       2. The event is converted to binary
  *             0b01001011 seconds after epoch
- *       3. The leaf node corresponding to the time stamp is found
+ *       3. A set of bit masks that encompasses the entire event is determined
+ *             0b01001011/8
+ *       4. A node corresponding to each of the masks is found
  *             Starting from the root node, go:
  *               left, right, left, left, right, left, right, right
  *               0     1      0      0    1      0     1      1
- *       4. The event is added to the beginning of a linked list located at the
- *          leaf node
+ *       5. The event is added to the beginning of a linked list located at each
+ *          node
  *
- * Inner node representation:
+ *     EXAMPLE EVENT INSERTION
+ *       1. The UNIX timestamp of the event is obtained (truncated to 8 bits for
+ *          brevity)
+ *             32-95 seconds after epoch (this event lasts 63 seconds)
+ *       2. The event is converted to binary
+ *             0b00100000-0b01111111 seconds after epoch
+ *       3. A set of bit masks that encompasses the entire event is determined
+ *             0b00100000/3
+ *             0b01000000/2
+ *       4. A node corresponding to each of the masks is found
+ *             Starting from the root node, go:
+ *               left, left, right
+ *               0     0     1
+ *             Starting from the root node, go:
+ *               left, right
+ *               0     1
+ *       5. The event is added to the beginning of a linked list located at each
+ *          node
+ *
+ * Node representation:
  *     struct {
  *         uint64_t child0;
  *         uint64_t child1;
- *         char reserved[16];           Ignored for now, MUST be all 0s
- *     };
- *
- * Leaf node reprentation:
- *     struct {
- *         uint64_t event;              Location of the event linkedlist
- *                                      associated with this leaf node
- *         char reserved[16];           Ignored for now, MUST be all 0s
+ *         uint64_t event;
+ *         char reserved[16];
  *     };
  *
  * Event representation
@@ -102,16 +119,27 @@ WRITE_FUNC(64)
 /* Unsigned -> signed 64 bit int conversion. Note that this implementation does
  * create two zeros*/
 static inline int64_t us64(uint64_t v) {
-	return v < (1llu << 63) ? v : (-(int64_t) (v ^ (1llu << 63)));
+	if (v >= 1llu << 63) {
+		uint64_t normalized = v & ~(1llu << 63);
+		uint64_t abs = (1llu << 63) - normalized;
+		return -(int64_t) abs;
+	}
+	else {
+		return v;
+	}
 }
 
 /* Opposite of us64 */
 static inline uint64_t su64(int64_t v) {
-	return v >= 0 ? v : (((uint64_t) (-v)) | (1llu << 63));
+	return (uint64_t) v;
 }
 
 /* Creates a datefile. This function will truncate `path` */
 static int datecreate(char *path, datefile *ret);
+
+/* Add a date with a certain prefix */
+static int dateaddbit(struct event *event, datefile *file,
+		uint64_t prefix, int precision);
 
 static int datesearchrecursive(datefile *file, struct eventlist *events,
 		uint64_t start, uint64_t end,
@@ -211,6 +239,11 @@ static int datecreate(char *path, datefile *ret) {
 	return 0;
 }
 
+static int dateaddbit(struct event *event, datefile *file,
+		uint64_t prefix, int precision) {
+	return 0;
+}
+
 int dateadd(struct event *event, datefile *file) {
 	if (file->bitn > 64) {
 		return -1;
@@ -220,117 +253,117 @@ int dateadd(struct event *event, datefile *file) {
 		return -1;
 	}
 
-	/* Go through each bit of the timestamp */
-	for (uint64_t mask = 1llu << (file->bitn-1); mask > 0; mask >>= 1) {
-		int bit = !!(su64(event->time) & mask);
-		uint64_t next;
-		long field_pos;
-
-		/* Find the field */
-		if (fseek(file->file, bit ? 8:0, SEEK_CUR) == -1) {
-			return -1;
-		}
-
-		/* Store the field position */
-		if ((field_pos = ftell(file->file)) == -1) {
-			return -1;
-		}
-
-		/* Read the field */
-		if (readu64(&next, file->file)) {
-			return -1;
-		}
-
-		/* If the field is empty (the node doesn't exist yet), create
-		 * it */
-		if (next == 0) {
-			long new_pos;
-
-			/* Go to the end of the file (where new nodes are
-			 * added) */
-			if (fseek(file->file, 0, SEEK_END) == -1) {
-				return -1;
-			}
-
-			/* Remember the location of the new node*/
-			if ((new_pos = ftell(file->file)) == -1) {
-				return -1;
-			}
-
-			/* Initialize the new node with zeroes */
-			for (int i = 0; i < 32; ++i) {
-				if (fputc(0, file->file) == EOF) {
-					return -1;
-				}
-			}
-
-			/* Update the parent node's child pointer */
-			if (fseek(file->file, field_pos, SEEK_SET) == -1) {
-				return -1;
-			}
-			if (writeu64((uint64_t) new_pos, file->file)) {
-				return -1;
-			}
-			
-			/* Return to the new node position */
-			if (fseek(file->file, new_pos, SEEK_SET) == -1) {
-				return -1;
-			}
-		}
-		/* If the child node does exist, just go to it */
-		else {
-			if (fseek(file->file, next, SEEK_SET) == -1) {
-				return -1;
-			}
-		}
-	}
-
-	/* We are at the leaf node */
-
-	long leafpos, newhead;
-	uint64_t oldhead;
-	size_t eventlen = strlen(event->name);
-
-	/* Mark the location of the leaf node data */
-	if ((leafpos = ftell(file->file)) == -1) {
-		return -1;
-	}
-
-	/* Get the old head location */
-	if (readu64(&oldhead, file->file)) {
-		return -1;
-	}
-
-	/* Seek to the end and get the new head */
-	if (fseek(file->file, 0, SEEK_END) == -1 ||
-	    (newhead = ftell(file->file)) == -1) {
-		return -1;
-	}
-
-	/* Write event data */
-	if (writeu64(oldhead, file->file) ||  /* next (prepend to linkedlist) */
-	    writeu64(leafpos, file->file) ||  /* prev (leaf node) */
-	    writeu64(0, file->file) ||        /* functions (0) */
-	    writeu64(eventlen, file->file) || /* event len */
-	    fwrite(event->name, eventlen, 1, file->file) < 1 || /* event name */
-	    fflush(file->file) == EOF         /* flush file */ ) {
-		return -1;
-	}
-
-	/* Update the old head's prev value */
-	if (oldhead != 0 && 
-		(fseek(file->file, oldhead+8, SEEK_SET) == -1 ||
-	         writeu64(newhead, file->file))) {
-		return -1;
-	}
-
-	/* Update head pointer  */
-	if (fseek(file->file, leafpos, SEEK_SET) == -1 ||
-	    writeu64(newhead, file->file)) {
-		return -1;
-	}
-
-	event->id = newhead;
+//	/* Go through each bit of the timestamp */
+//	for (uint64_t mask = 1llu << (file->bitn-1); mask > 0; mask >>= 1) {
+//		int bit = !!(su64(event->time) & mask);
+//		uint64_t next;
+//		long field_pos;
+//
+//		/* Find the field */
+//		if (fseek(file->file, bit ? 8:0, SEEK_CUR) == -1) {
+//			return -1;
+//		}
+//
+//		/* Store the field position */
+//		if ((field_pos = ftell(file->file)) == -1) {
+//			return -1;
+//		}
+//
+//		/* Read the field */
+//		if (readu64(&next, file->file)) {
+//			return -1;
+//		}
+//
+//		/* If the field is empty (the node doesn't exist yet), create
+//		 * it */
+//		if (next == 0) {
+//			long new_pos;
+//
+//			/* Go to the end of the file (where new nodes are
+//			 * added) */
+//			if (fseek(file->file, 0, SEEK_END) == -1) {
+//				return -1;
+//			}
+//
+//			/* Remember the location of the new node*/
+//			if ((new_pos = ftell(file->file)) == -1) {
+//				return -1;
+//			}
+//
+//			/* Initialize the new node with zeroes */
+//			for (int i = 0; i < 32; ++i) {
+//				if (fputc(0, file->file) == EOF) {
+//					return -1;
+//				}
+//			}
+//
+//			/* Update the parent node's child pointer */
+//			if (fseek(file->file, field_pos, SEEK_SET) == -1) {
+//				return -1;
+//			}
+//			if (writeu64((uint64_t) new_pos, file->file)) {
+//				return -1;
+//			}
+//			
+//			/* Return to the new node position */
+//			if (fseek(file->file, new_pos, SEEK_SET) == -1) {
+//				return -1;
+//			}
+//		}
+//		/* If the child node does exist, just go to it */
+//		else {
+//			if (fseek(file->file, next, SEEK_SET) == -1) {
+//				return -1;
+//			}
+//		}
+//	}
+//
+//	/* We are at the dest node */
+//
+//	long leafpos, newhead;
+//	uint64_t oldhead;
+//	size_t eventlen = strlen(event->name);
+//
+//	/* Mark the location of the leaf node data */
+//	if ((leafpos = ftell(file->file)) == -1) {
+//		return -1;
+//	}
+//
+//	/* Get the old head location */
+//	if (readu64(&oldhead, file->file)) {
+//		return -1;
+//	}
+//
+//	/* Seek to the end and get the new head */
+//	if (fseek(file->file, 0, SEEK_END) == -1 ||
+//	    (newhead = ftell(file->file)) == -1) {
+//		return -1;
+//	}
+//
+//	/* Write event data */
+//	if (writeu64(oldhead, file->file) ||  /* next (prepend to linkedlist) */
+//	    writeu64(leafpos, file->file) ||  /* prev (leaf node) */
+//	    writeu64(0, file->file) ||        /* functions (0) */
+//	    writeu64(eventlen, file->file) || /* event len */
+//	    fwrite(event->name, eventlen, 1, file->file) < 1 || /* event name */
+//	    fflush(file->file) == EOF         /* flush file */ ) {
+//		return -1;
+//	}
+//
+//	/* Update the old head's prev value */
+//	if (oldhead != 0 && 
+//		(fseek(file->file, oldhead+8, SEEK_SET) == -1 ||
+//	         writeu64(newhead, file->file))) {
+//		return -1;
+//	}
+//
+//	/* Update head pointer  */
+//	if (fseek(file->file, leafpos, SEEK_SET) == -1 ||
+//	    writeu64(newhead, file->file)) {
+//		return -1;
+//	}
+//
+//	event->id = newhead;
 
 	return 0;
 }
@@ -408,54 +441,54 @@ static int datesearchrecursive(datefile *file, struct eventlist *events,
 
 static int readtime(datefile *file, struct eventlist *events,
 		uint64_t time, uint64_t ptr) {
-	if (fseek(file->file, ptr, SEEK_SET) == -1) {
-		return -1;
-	}
-
-	uint64_t iter;
-	if (readu64(&iter, file->file)) {
-		return -1;
-	}
-	while (iter != 0) {
-		if (fseek(file->file, iter, SEEK_SET) == -1) {
-			return -1;
-		}
-
-		/* Reallocate events if OOM */
-		if (events->len >= events->alloc) {
-			struct event *newevents;
-			size_t newalloc;
-			newalloc = events->alloc * 2;
-			newevents = realloc(events->events,
-					newalloc * sizeof *newevents);
-			if (newevents == NULL) {
-				return -1;
-			}
-			events->alloc = newalloc;
-			events->events = newevents;
-		}
-
-		uint64_t prev, next, functions, len;
-		if (readu64(&next, file->file) ||
-		    readu64(&prev, file->file) ||
-		    readu64(&functions, file->file) ||
-		    readu64(&len, file->file)) {
-			return -1;
-		}
-
-		struct event *event = events->events + (events->len++);
-		event->time = us64(time);
-		if ((event->name = malloc(len+1)) == NULL) {
-			return -1;
-		}
-		if (fread(event->name, len, 1, file->file) < 1) {
-			return -1;
-		}
-		event->name[len] = '\0';
-		event->id = iter;
-
-		iter = next;
-	}
+//	if (fseek(file->file, ptr, SEEK_SET) == -1) {
+//		return -1;
+//	}
+//
+//	uint64_t iter;
+//	if (readu64(&iter, file->file)) {
+//		return -1;
+//	}
+//	while (iter != 0) {
+//		if (fseek(file->file, iter, SEEK_SET) == -1) {
+//			return -1;
+//		}
+//
+//		/* Reallocate events if OOM */
+//		if (events->len >= events->alloc) {
+//			struct event *newevents;
+//			size_t newalloc;
+//			newalloc = events->alloc * 2;
+//			newevents = realloc(events->events,
+//					newalloc * sizeof *newevents);
+//			if (newevents == NULL) {
+//				return -1;
+//			}
+//			events->alloc = newalloc;
+//			events->events = newevents;
+//		}
+//
+//		uint64_t prev, next, functions, len;
+//		if (readu64(&next, file->file) ||
+//		    readu64(&prev, file->file) ||
+//		    readu64(&functions, file->file) ||
+//		    readu64(&len, file->file)) {
+//			return -1;
+//		}
+//
+//		struct event *event = events->events + (events->len++);
+//		event->time = us64(time);
+//		if ((event->name = malloc(len+1)) == NULL) {
+//			return -1;
+//		}
+//		if (fread(event->name, len, 1, file->file) < 1) {
+//			return -1;
+//		}
+//		event->name[len] = '\0';
+//		event->id = iter;
+//
+//		iter = next;
+//	}
 	return 0;
 }
 
@@ -486,3 +519,21 @@ int dateremove(datefile *file, uint64_t id) {
 	}
 	return 0;
 }
+
+#ifdef NREM_TESTS
+int datestest(int *passed, int *total) {
+	NREM_ASSERT(su64(us64(0)) == 0);
+	NREM_ASSERT(su64(us64(10)) == 10);
+	NREM_ASSERT(su64(us64((1llu << 63) + 100)) == (1llu << 63) + 100);
+	NREM_ASSERT(us64(su64(0)) == 0);
+	NREM_ASSERT(us64(su64(10)) == 10);
+	NREM_ASSERT(us64(su64(-10)) == -10);
+	NREM_ASSERT(us64(su64((1llu << 63) - 1)) == ((1llu << 63) - 1));
+	return 0;
+}
+#else
+int datestest(int *passed, int *total) {
+	++*total;
+	return 1;
+}
+#endif

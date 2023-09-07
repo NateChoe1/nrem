@@ -13,30 +13,10 @@ static int nremcliremove(int argc, char **argv);
 
 static int printpart(struct event *ev, char *part);
 
-static datefile f;
-
 int nremcli(int argc, char **argv) {
 	if (argc < 2) {
 		fprintf(stderr, "Usage: %s [add/search/remove] [options]\n",
 				argv[0]);
-		return 1;
-	}
-
-	char path[256];
-	char *env;
-	if ((env = getenv("DATEFILE")) != NULL) {
-		strncpy(path, env, sizeof path - 1);
-		path[sizeof path - 1] = '\0';
-	}
-	else if ((env = getenv("HOME")) != NULL) {
-		snprintf(path, sizeof path, "%s/.config/nrem/datefile", env);
-	}
-	else {
-		fputs("Failed to get datefile path, set $DATEFILE\n", stderr);
-		return 1;
-	}
-	if (dateopen(path, &f)) {
-		fprintf(stderr, "Failed to open datefile %s\n", path);
 		return 1;
 	}
 
@@ -56,11 +36,20 @@ int nremcli(int argc, char **argv) {
 static int nremcliadd(int argc, char **argv) {
 	struct event event;
 	if (argc < 3) {
-		fprintf(stderr, "Usage: %s [time] [event name]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [event name] [start] (end)\n",
+				argv[0]);
 		return 1;
 	}
-	event.time = parsetime(argv[1]);
-	event.name = argv[2];
+	
+	event.name = argv[1];
+
+	event.start = parsetime(argv[2]);
+	if (argc == 3) {
+		event.end = event.start;
+	}
+	else {
+		event.end = parsetime(argv[3]);
+	}
 	if (dateadd(&event, &f)) {
 		fputs("Failed to add event\n", stderr);
 		return 1;
@@ -134,7 +123,7 @@ static int nremcliremove(int argc, char **argv) {
 }
 
 static int printpart(struct event *ev, char *part) {
-	time_t t = (time_t) ev->time;
+	time_t t = (time_t) ev->start;
 	struct tm *tm = localtime(&t);
 	if (strcmp(part, "DATE") == 0) {
 		printf("%04d-%02d-%02d",

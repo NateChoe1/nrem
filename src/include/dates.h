@@ -13,7 +13,8 @@ typedef struct {
 int dateopen(char *path, datefile *ret);
 
 struct event {
-	int64_t time;
+	int64_t start;
+	int64_t end;
 	char *name;
 	uint64_t id; /* A unique identifier for this event within a file.
 			Guaranteed to be set by every function in `dates.c` that
@@ -34,5 +35,11 @@ struct eventlist *datesearch(datefile *file, int64_t start, int64_t end);
 void freeeventlist(struct eventlist *list);
 
 int dateremove(datefile *file, uint64_t id);
+
+#ifdef NREM_TESTS
+
+int datestest(int *passed, int *total);
+
+#endif
 
 #endif
