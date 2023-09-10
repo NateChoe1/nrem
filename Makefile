@@ -1,9 +1,9 @@
-CFLAGS = -O2
+CFLAGS = -O2 -g -DNREM_TESTS
 OUT = build/nrem
 INSTALLDIR = /usr/bin
 
 _CFLAGS = $(CFLAGS) -Isrc/include
-__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -DNREM_TESTS
+__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -Wshadow -Werror
 LDFLAGS =
 __LDFLAGS = $(LDFLAGS)
 HEADERS = $(wildcard src/include/*.h)

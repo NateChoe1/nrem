@@ -19,8 +19,8 @@ struct event {
 	uint64_t id; /* A unique identifier for this event within a file.
 			Guaranteed to be set by every function in `dates.c` that
 			takes or returns an event, MUST NOT be set outside of
-			`dates.c`. Internally just a pointer to this event in
-			the file, but don't worry about that. */
+			`dates.c`. Internally just a pointer to this event data
+			in the file, but don't worry about that. */
 };
 
 struct eventlist {

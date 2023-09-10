@@ -1,3 +1,6 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include <time.h>
 #include <errno.h>
 #include <stdio.h>
@@ -193,3 +196,5 @@ int64_t parsetime(char *s) {
 	}
 	return ret.time;
 }
+
+#pragma GCC diagnostic pop
