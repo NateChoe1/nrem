@@ -1,0 +1,8 @@
+#!/bin/sh
+
+./nrem cli add 'test' 2023-09-13
+if [ "$(./nrem cli search 2023-09-12 2023-09-14 | wc -l)" -eq 1 ] ; then
+	exit 0
+else
+	exit 1
+fi
