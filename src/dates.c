@@ -154,7 +154,7 @@ static int datecreate(char *path, datefile *ret);
 
 /* Add a date with a certain prefix */
 static int dateaddbit(datefile *file, uint64_t prefix, int precision,
-		uint64_t nextsmptr, uint64_t *newnextsmptr);
+		uint64_t dataptr, uint64_t nextsmptr, uint64_t *newnextsmptr);
 
 static int datesearchrecursive(datefile *file, struct eventlist *events,
 		uint64_t start, uint64_t end,
@@ -255,7 +255,7 @@ static int datecreate(char *path, datefile *ret) {
 }
 
 static int dateaddbit(datefile *file, uint64_t prefix, int precision,
-		uint64_t nextsmptr, uint64_t *newnextsmptr) {
+		uint64_t dataptr, uint64_t nextsmptr, uint64_t *newnextsmptr) {
 	if (fseek(file->file, file->bit1, SEEK_SET) == -1) {
 		return -1;
 	}
@@ -330,7 +330,7 @@ static int dateaddbit(datefile *file, uint64_t prefix, int precision,
 
 	/* We are at the dest node */
 
-	long headptr, newhead;
+	long headptr, evptr;
 	uint64_t oldhead;
 
 	/* Seek to the timestamp linked list head */
@@ -348,19 +348,16 @@ static int dateaddbit(datefile *file, uint64_t prefix, int precision,
 		return -1;
 	}
 
-	/* Seek to the end and get the new head */
-	if (fseek(file->file, 0, SEEK_END) == -1 ||
-	    (newhead = ftell(file->file)) == -1) {
-		return -1;
-	}
-
 	long newnextsm;
 
 	/* Write event data */
-	if (writeu64(oldhead, file->file) ||  /* next (prepend to linkedlist) */
+	if (fseek(file->file, 0, SEEK_END) == -1 || /* Get to the EOF */
+	    (evptr = ftell(file->file)) == -1 || /* Get event location */
+	    writeu64(oldhead, file->file) ||  /* next (prepend to linkedlist) */
 	    writeu64(headptr, file->file) ||  /* prev (head pointer) */
 	    (newnextsm = ftell(file->file)) == -1 || /* Store nextsm loc */
-	    writeu64(0, file->file)) {        /* nextsm (tmp 0 val) */
+	    writeu64(0, file->file) ||        /* nextsm (tmp 0 val) */
+	    writeu64(dataptr, file->file)) {  /* dataptr */
 		return -1;
 	}
 	/* Padding */
@@ -374,19 +371,19 @@ static int dateaddbit(datefile *file, uint64_t prefix, int precision,
 	/* Update the old timestamp head's prev value */
 	if (oldhead != 0 && 
 		(fseek(file->file, oldhead+8, SEEK_SET) == -1 ||
-	         writeu64(newhead, file->file))) {
+	         writeu64(evptr, file->file))) {
 		return -1;
 	}
 
 	/* Update timestamp head pointer */
 	if (fseek(file->file, headptr, SEEK_SET) == -1 ||
-	    writeu64(newhead, file->file)) {
+	    writeu64(evptr, file->file)) {
 		return -1;
 	}
 
 	/* Update nextsm */
 	if (fseek(file->file, nextsmptr, SEEK_SET) == -1 ||
-	    writeu64(newhead, file->file)) {
+	    writeu64(evptr, file->file)) {
 		return -1;
 	}
 
@@ -412,9 +409,11 @@ int dateadd(struct event *event, datefile *file) {
 	size_t eventlen = strlen(event->name);
 
 	/* Write event data */
-	if (writeu64(0, file->file) ||
-	    (nextsmptr = ftell(file->file)) == -1 ||
+	if (writeu64(0, file->file) ||    /* functions */
+	    (nextsmptr = ftell(file->file)) == -1 || /* firstev */
 	    writeu64(0, file->file) ||
+	    writeu64(su64(event->start), file->file) ||
+	    writeu64(su64(event->end), file->file) ||
 	    writeu64(eventlen, file->file) ||
 	    fwrite(event->name, eventlen, 1, file->file) < 1 ||
 	    fflush(file->file) == EOF) {
@@ -500,7 +499,7 @@ int dateadd(struct event *event, datefile *file) {
 		}
 		/* Report a prefix */
 		if (dateaddbit(file, lower, 64-precision,
-					nextsmptr, &newnextsmptr)) {
+					id, nextsmptr, &newnextsmptr)) {
 			return -1;
 		}
 		nextsmptr = newnextsmptr;
