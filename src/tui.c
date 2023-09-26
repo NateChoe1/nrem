@@ -3,7 +3,7 @@
 #include <util.h>
 #include <interfaces.h>
 
-static void displaycal(WINDOW *win, int month, int year);
+static void displaycal(WINDOW *win, int day, int month, int year);
 
 static char *months[] = {
 	"January",
@@ -33,6 +33,7 @@ static int dump;
 int nremtui(int argc, char **argv) {
 	WINDOW *cal;
 
+	int day = 1;
 	int month = nowb.tm_mon;
 	int year = nowb.tm_year + 1900;
 
@@ -44,20 +45,28 @@ int nremtui(int argc, char **argv) {
 	cal = newwin(0, 0, 0, 0);
 
 	for (;;) {
-		displaycal(cal, month, year);
+		displaycal(cal, day, month, year);
 
 		int c = getch();
 
-		if (c == 'q') {
+		switch (c) {
+		case 'q':
+			goto end;
+		case 'h':
+			--day;
+			break;
+		case 'l':
+			++day;
 			break;
 		}
 	}
 
+end:
 	endwin();
 	return 0;
 }
 
-static void displaycal(WINDOW *win, int month, int year) {
+static void displaycal(WINDOW *win, int day, int month, int year) {
 	char header[50];
 	int headerlen;
 	int w, h;
@@ -103,11 +112,14 @@ static void displaycal(WINDOW *win, int month, int year) {
 
 	int weeks = getweeks(year, month);
 	int firstday = getfirstday(year, month);
-	int day = 0;
+	int currday = 0;
+	int cursorx, cursory;
+	cursorx = cursory = -1;
+
 	for (int i = 0; i < weeks; ++i) {
 		for (int j = 0; j < 7; ++j) {
-			if (day > 0 || j >= firstday) {
-				++day;
+			if (currday > 0 || j >= firstday) {
+				++currday;
 			}
 			for (int r = 0; r < boxheight; ++r) {
 				wmove(win, topmargin + i*boxheight+r,
@@ -117,12 +129,17 @@ static void displaycal(WINDOW *win, int month, int year) {
 				if (r == boxheight-1) {
 					wattron(win, A_UNDERLINE);
 				}
-				int cx;
-				getyx(win, dump, cx);
+				int cy, cx;
+				getyx(win, cy, cx);
 
-				if (day != 0 && r == 0) {
+				if (r == 0 && currday == day) {
+					cursory = cy;
+					cursorx = cx;
+				}
+
+				if (currday != 0 && r == 0) {
 					char date[20];
-					sprintf(date, "%d", day);
+					sprintf(date, "%d", currday);
 					waddnstr(win, date, boxwidth-1);
 				}
 				/* TODO: WRITE EVENT NAMES */
@@ -137,6 +154,10 @@ static void displaycal(WINDOW *win, int month, int year) {
 				waddch(win, '|');
 			}
 		}
+	}
+
+	if (cursorx != -1 && cursory != -1) {
+		wmove(win, cursory, cursorx);
 	}
 
 	wrefresh(win);
