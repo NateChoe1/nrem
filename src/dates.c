@@ -659,6 +659,9 @@ next:
 }
 
 void freeeventlist(struct eventlist *list) {
+	if (list == NULL) {
+		return;
+	}
 	for (int i = 0; i < list->len; ++i) {
 		free(list->events[i].name);
 	}

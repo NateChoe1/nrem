@@ -118,8 +118,20 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 
 	for (int i = 0; i < weeks; ++i) {
 		for (int j = 0; j < 7; ++j) {
+			struct eventlist *events = NULL;
 			if (currday > 0 || j >= firstday) {
 				++currday;
+
+				/*
+				time_t start, end;
+				struct tm tm;
+				tm.tm_sec = tm.tm_min = tm.tm_hour = 0;
+				tm.tm_mday = currday;
+				tm.tm_mon = month;
+				tm.tm_year = year - 1900;
+				tm.tm_isdst = -1;
+				*/
+				events = datesearch(&f, 0, 1000000000000l);
 			}
 			for (int r = 0; r < boxheight; ++r) {
 				wmove(win, topmargin + i*boxheight+r,
@@ -142,7 +154,11 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 					sprintf(date, "%d", currday);
 					waddnstr(win, date, boxwidth-1);
 				}
-				/* TODO: WRITE EVENT NAMES */
+				if (events != NULL &&
+						r > 0 && r <= events->len) {
+					waddnstr(win, events->events[r-1].name,
+							boxwidth-1);
+				}
 
 				int newcx;
 				for (getyx(win, dump, newcx);
@@ -153,6 +169,7 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 				wattroff(win, A_UNDERLINE);
 				waddch(win, '|');
 			}
+			freeeventlist(events);
 		}
 	}
 
