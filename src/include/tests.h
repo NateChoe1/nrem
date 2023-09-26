@@ -3,6 +3,8 @@
 
 #ifdef NREM_TESTS
 
+#include <stdio.h>
+
 #define NREM_ASSERT(condition) \
 	++*total; \
 	if (condition) { \

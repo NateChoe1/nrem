@@ -1,3 +1,4 @@
+#include <util.h>
 #include <tests.h>
 #include <dates.h>
 
@@ -9,6 +10,9 @@ int runtests(int *passed, int *total) {
 	ret = 0;
 
 	if (datestest(passed, total)) {
+		ret = 1;
+	}
+	if (utiltest(passed, total)) {
 		ret = 1;
 	}
 

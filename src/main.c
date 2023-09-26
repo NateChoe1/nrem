@@ -7,6 +7,7 @@
 
 datefile f;
 time_t now;
+struct tm nowb;
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
@@ -15,6 +16,7 @@ int main(int argc, char **argv) {
 	}
 
 	now = time(NULL);
+	memcpy(&nowb, localtime(&now), sizeof nowb);
 
 	char path[256];
 	char *env;

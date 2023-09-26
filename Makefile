@@ -2,10 +2,12 @@ CFLAGS = -O2 -g -DNREM_TESTS
 OUT = build/nrem
 INSTALLDIR = /usr/bin
 
-_CFLAGS = $(CFLAGS) -Isrc/include
-__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -Wshadow -Werror
+LIBS = ncurses
+_CFLAGS = $(CFLAGS) -Isrc/include $(shell pkg-config --cflags $(LIBS))
+__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -Wshadow
 LDFLAGS =
-__LDFLAGS = $(LDFLAGS)
+_LDFLAGS = $(LDFLAGS) $(shell pkg-config --libs $(LIBS))
+__LDFLAGS = $(_LDFLAGS)
 HEADERS = $(wildcard src/include/*.h)
 CSRC = $(wildcard src/*.c)
 OBJS = $(subst .c,.o,$(subst src,work,$(CSRC)))

@@ -130,6 +130,9 @@ static int printpart(struct event *ev, char *part) {
 				tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday);
 		return 0;
 	}
+	if (strcmp(part, "UNIX") == 0) {
+		printf("%ld", t);
+	}
 	if (strcmp(part, "TIME12") == 0) {
 		int hour = tm->tm_hour % 12;
 		if (hour == 0) {
