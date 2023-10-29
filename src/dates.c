@@ -1,3 +1,9 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+#include <stdint.h>
+#include <stdio.h>
+
 #include <string.h>
 #include <stdlib.h>
 
@@ -92,7 +98,7 @@
  *                                      event, stored as a conversion by su64()
  *
  *         uint64_t len;                The length of this event name
- *         char event[len];             The event name itself
+ *         char name[len];              The event name itself
  *     };
  * */
 
@@ -106,8 +112,11 @@ static int readu##bits(uint##bits##_t *ret, FILE *file) { \
 		if (c < 0) { \
 			return -1; \
 		} \
+		if (c > 0xff) { \
+			return -1; \
+		} \
 		*ret <<= 8; \
-		*ret |= c; \
+		*ret |= (uint8_t) c; \
 	} \
 	return 0; \
 }
@@ -120,7 +129,7 @@ static int writeu##bits(uint##bits##_t val, FILE *file) { \
 	char buff[sizeof val]; \
 	int ret; \
 	for (int i = 0; i < sizeof val; ++i) { \
-		buff[sizeof val - i - 1] = val & 0xff; \
+		buff[((int) sizeof val) - i - 1] = (char) (val & 0xff); \
 		val >>= 8; \
 	} \
 	ret = fwrite(buff, sizeof buff, 1, file) == 1 ? 0:-1; \
@@ -133,12 +142,12 @@ WRITE_FUNC(64)
 /* Unsigned -> signed 64 bit int conversion. 0x80000... is zero */
 static inline int64_t us64(uint64_t v) {
 	if (v & (1llu << 63)) {
-		return v ^ (1llu << 63);
+		return (int64_t) (v ^ ((uint64_t) 1llu << 63));
 	}
 	else {
-		/* This specific case is implementation-defined behavior */
+		/* TODO: Find out how to fix this hack */
 		if (v == 0) {
-			return -0x8000000000000000llu;
+			return INT64_MIN;
 		}
 		return -(int64_t) ((1llu << 63) - v);
 	}
@@ -148,6 +157,37 @@ static inline int64_t us64(uint64_t v) {
 static inline uint64_t su64(int64_t v) {
 	return (1llu << 63) ^ (uint64_t) v;
 }
+
+#define STRUCTS \
+	X(df_header, \
+		Y(PADDING, magic, 8) \
+		Y(U64, bit1, ~) \
+		Y(U8, bitn, ~) \
+		Y(PADDING, reserved, 16) \
+	) \
+	X(df_node, \
+		Y(U64, child0, ~) \
+		Y(U64, child1, ~) \
+		Y(U64, event, ~) \
+		Y(PADDING, reserved, 16) \
+	) \
+	X(df_event, \
+		Y(U64, next, ~) \
+		Y(U64, prev, ~) \
+		Y(U64, nextsm, ~) \
+		Y(U64, ptr, ~) \
+		Y(PADDING, reserved, 16) \
+	) \
+	X(df_event_data, \
+		Y(U64, functions, ~) \
+		Y(U64, firstev, ~) \
+		Y(I64, start, ~) \
+		Y(I64, end, ~) \
+		Y(STR, name, ~) \
+	) \
+
+#include "filestruct.h"
+#undef STRUCTS
 
 /* Creates a datefile. This function will truncate `path` */
 static int datecreate(char *path, datefile *ret);
@@ -166,224 +206,175 @@ static int eventremove(datefile *file, uint64_t id, uint64_t *nextsmret);
 static inline uint64_t fill1(int n) {
 	/* Undefined behavior :( */
 	if (n >= 64) {
-		return -1;
+		return UINT64_MAX;
 	}
-	return (0ull << n)-1;
+	return ((uint64_t) 1ull << n)-1;
 }
 
 int dateopen(char *path, datefile *ret) {
 	FILE *file = fopen(path, "rb+");
+	struct df_header header;
 	if (file == NULL) {
 		return datecreate(path, ret);
 	}
 
-	char magic[8];
-	if (fread(magic, sizeof magic, 1, file) < 1) {
+	if (read_df_header(&header, file)) {
 		return -1;
 	}
-	if (memcmp(magic, "datefile", sizeof magic)) {
+
+	if (memcmp(header.magic, "datefile", sizeof header.magic)) {
 		return -1;
 	}
 
 	ret->file = file;
-	if (readu64(&ret->bit1, file)) {
-		return -1;
-	}
-	if (readu8(&ret->bitn, file)) {
-		return -1;
-	}
+	ret->bit1 = header.bit1;
+	ret->bitn = header.bitn;
 
 	return 0;
 }
 
 static int datecreate(char *path, datefile *ret) {
 	FILE *file = fopen(path, "w+");
+	struct df_header header;
+	struct df_node bit1;
 
-	if (file == NULL ||
-	    fwrite("datefile", 8, 1, file) < 1) {
+	if (file == NULL) {
 		return -1;
 	}
 
-	/* Store the bit1 position in the header to write to later */
-	long bit1header = ftell(file);
-	if (bit1header == -1) {
+	memcpy(header.magic, "datefile", sizeof header.magic);
+	header.bit1 = 0; /* to be overwritten later */
+	header.bitn = 64;
+	memset(header.reserved, 0, sizeof header.reserved);
+
+	if (write_df_header(&header, file) == -1) {
 		return -1;
 	}
 
-	/* Write a temporary bit1 position value */
-	if (writeu64(0, file)) {
+	bit1.child0 = bit1.child1 = bit1.event = 0;
+	memset(bit1.reserved, 0, sizeof bit1.reserved);
+	if (write_df_node(&bit1, file) == -1) {
 		return -1;
 	}
 
-	/* 64 bits per timestamp */
-	if (writeu8(64, file)) {
-		return -1;
-	}
-
-	/* Write reserved area */
-	for (int i = 0; i < 16; ++i) {
-		if (fputc(0, file) == EOF) {
-			return -1;
-		}
-	}
-
-	/* Find bit1 */
-	long bit1loc = ftell(file);
-	if (bit1loc == -1) {
-		return -1;
-	}
-
-	/* Write bit1 */
-	for (int i = 0; i < 40; ++i) {
-		if (fputc(0, file) == EOF) {
-			return -1;
-		}
-	}
-
-	if (fseek(file, bit1header, SEEK_SET) == -1) {
-		return -1;
-	}
-	if (writeu64(bit1loc, file)) {
+	if (seek(file, header.bit1_pos, SEEK_SET) == -1 ||
+	    writeu64(bit1.offset, file) == -1) {
 		return -1;
 	}
 
 	ret->file = file;
-	ret->bit1 = bit1loc;
-	ret->bitn = 64;
+	ret->bit1 = bit1.offset;
+	ret->bitn = header.bitn;
 
 	return 0;
 }
 
 static int dateaddbit(datefile *file, uint64_t prefix, int precision,
 		uint64_t dataptr, uint64_t nextsmptr, uint64_t *newnextsmptr) {
-	if (fseek(file->file, file->bit1, SEEK_SET) == -1) {
+	if (seek(file->file, file->bit1, SEEK_SET) == -1) {
 		return -1;
 	}
 
-	uint64_t mask = 1llu << (file->bitn-1);
-
+	/* For each bit */
 	for (int i = 0; i < precision; ++i) {
+		uint64_t mask = 1llu << (file->bitn-1-i);
 		int bit = !!(prefix & mask);
 		uint64_t next;
-		long field_pos;
+		struct df_node node;
 
-		/* Find the field */
-		if (fseek(file->file, bit ? 8:0, SEEK_CUR) == -1) {
+		/* Read the node */
+		if (read_df_node(&node, file->file)) {
 			return -1;
 		}
+		next = bit ? node.child0 : node.child1;
 
-		/* Store the field position */
-		if ((field_pos = ftell(file->file)) == -1) {
-			return -1;
-		}
-
-		/* Read the field */
-		if (readu64(&next, file->file)) {
-			return -1;
-		}
-
-		/* If the field is empty (the node doesn't exist yet), create
-		 * it */
+		/* If the next node down doesn't exist yet, create it */
 		if (next == 0) {
-			long new_pos;
+			uint64_t new_pos;
+			struct df_node new_node;
 
 			/* Go to the end of the file (where new nodes are
 			 * added) */
-			if (fseek(file->file, 0, SEEK_END) == -1) {
+			if (seek(file->file, 0, SEEK_END) == -1) {
 				return -1;
 			}
 
 			/* Remember the location of the new node*/
-			if ((new_pos = ftell(file->file)) == -1) {
+			if (tell(file->file, &new_pos) == -1) {
 				return -1;
 			}
 
-			/* Initialize the new node with zeroes */
-			for (int j = 0; j < 40; ++j) {
-				if (fputc(0, file->file) == EOF) {
-					return -1;
-				}
+			/* Write the new node */
+			new_node.child0 = 0;
+			new_node.child1 = 0;
+			new_node.event = 0;
+			memset(new_node.reserved, 0, sizeof new_node.reserved);
+			if (write_df_node(&new_node, file->file)) {
+				return -1;
 			}
 
-			/* Update the parent node's child pointer */
-			if (fseek(file->file, field_pos, SEEK_SET) == -1) {
+			/* Update the old node */
+			if (bit) {
+				node.child1 = new_pos;
+			}
+			else {
+				node.child0 = new_pos;
+			}
+			if (seek(file->file, node.offset, SEEK_SET) == -1) {
 				return -1;
 			}
-			if (writeu64((uint64_t) new_pos, file->file)) {
+			if (write_df_node(&node, file->file)) {
 				return -1;
 			}
-			
-			/* Return to the new node position */
-			if (fseek(file->file, new_pos, SEEK_SET) == -1) {
+
+			/* Get back to the new (child) node */
+			if (seek(file->file, new_pos, SEEK_SET) == -1) {
 				return -1;
 			}
 		}
 		/* If the child node does exist, just go to it */
 		else {
-			if (fseek(file->file, next, SEEK_SET) == -1) {
+			if (seek(file->file, next, SEEK_SET) == -1) {
 				return -1;
 			}
 		}
-
-		mask >>= 1;
 	}
 
 	/* We are at the dest node */
 
-	long headptr, evptr;
-	uint64_t oldhead;
+	struct df_node node;
+	struct df_event event;
 
-	/* Seek to the timestamp linked list head */
-	if (fseek(file->file, 16, SEEK_CUR) == -1) {
+	/* Read the node */
+	if (read_df_node(&node, file->file)) {
 		return -1;
 	}
 
-	/* Mark the location of the timestamp head pointer */
-	if ((headptr = ftell(file->file)) == -1) {
-		return -1;
-	}
-
-	/* Get the old timestamp head location */
-	if (readu64(&oldhead, file->file)) {
-		return -1;
-	}
-
-	long newnextsm;
+	/* Create a new event struct */
+	event.next = node.event;
+	event.prev = node.event_pos;
+	event.nextsm = nextsmptr;
+	event.ptr = dataptr;
+	memset(event.reserved, 0, sizeof event.reserved);
 
 	/* Write event data */
-	if (fseek(file->file, 0, SEEK_END) == -1 || /* Get to the EOF */
-	    (evptr = ftell(file->file)) == -1 || /* Get event location */
-	    writeu64(oldhead, file->file) ||  /* next (prepend to linkedlist) */
-	    writeu64(headptr, file->file) ||  /* prev (head pointer) */
-	    (newnextsm = ftell(file->file)) == -1 || /* Store nextsm loc */
-	    writeu64(0, file->file) ||        /* nextsm (tmp 0 val) */
-	    writeu64(dataptr, file->file)) {  /* dataptr */
+	if (seek(file->file, 0, SEEK_END) == -1 || /* Get to the EOF */
+	    write_df_event(&event, file->file) == -1) { /* Write event */
 		return -1;
 	}
-	/* Padding */
-	for (int i = 0; i < 16; ++i) {
-		if (fputc(0, file->file) == EOF) {
-			return -1;
-		}
-	}
-	*newnextsmptr = newnextsm;
+	/* Get new nextsm */
+	*newnextsmptr = event.offset;
 
 	/* Update the old timestamp head's prev value */
-	if (oldhead != 0 && 
-		(fseek(file->file, oldhead+8, SEEK_SET) == -1 ||
-	         writeu64(evptr, file->file))) {
+	if (node.event != 0 &&
+	    ((seek(file->file, node.event + 8, SEEK_SET) == -1 ||
+	     writeu64(event.offset, file->file)))) {
 		return -1;
 	}
 
 	/* Update timestamp head pointer */
-	if (fseek(file->file, headptr, SEEK_SET) == -1 ||
-	    writeu64(evptr, file->file)) {
-		return -1;
-	}
-
-	/* Update nextsm */
-	if (fseek(file->file, nextsmptr, SEEK_SET) == -1 ||
-	    writeu64(evptr, file->file)) {
+	if (seek(file->file, node.event_pos, SEEK_SET) == -1 ||
+	    writeu64(*newnextsmptr, file->file)) {
 		return -1;
 	}
 
@@ -396,31 +387,31 @@ int dateadd(struct event *event, datefile *file) {
 		return -1;
 	}
 
-	if (fseek(file->file, 0, SEEK_END) == -1) {
+	if (seek(file->file, 0, SEEK_END) == -1) {
 		return -1;
 	}
 
-	long id;
-	if ((id = ftell(file->file)) == -1) {
+	uint64_t id;
+	if (tell(file->file, &id) == -1) {
 		return -1;
 	}
 
-	uint64_t nextsmptr;
 	size_t eventlen = strlen(event->name);
+	struct df_event_data data;
+	data.functions = 0;
+	data.firstev = 0;
+	data.start = event->start;
+	data.end = event->end;
+	data.name_len = eventlen;
+	data.name = event->name;
 
 	/* Write event data */
-	if (writeu64(0, file->file) ||    /* functions */
-	    (nextsmptr = ftell(file->file)) == -1 || /* firstev */
-	    writeu64(0, file->file) ||
-	    writeu64(su64(event->start), file->file) ||
-	    writeu64(su64(event->end), file->file) ||
-	    writeu64(eventlen, file->file) ||
-	    fwrite(event->name, eventlen, 1, file->file) < 1 ||
-	    fflush(file->file) == EOF) {
+	if (write_df_event_data(&data, file->file) == -1) {
 		return -1;
 	}
-
 	event->id = id;
+
+	uint64_t nextsmptr = 0;
 
 	uint64_t start = su64(event->start);
 	uint64_t end = su64(event->end);
@@ -480,13 +471,12 @@ int dateadd(struct event *event, datefile *file) {
 	 * b prefixes. This can be seen in the prefixes for 0x1-0xffffff...
 	 *
 	 * In theory this could be reduced to O(b log b) by using binary search
-	 * to find the maximum precision of a prefix, or even O(b) by caching
+	 * to find the maximum precision of a prefix, or even O(b) by memoizing
 	 * the precision of the previous prefix, but that would make the code
 	 * far more complicated.
 	 * */
 	while (lower <= end) {
 		int precision;
-		uint64_t newnextsmptr;
 		for (precision = 0; /* For each bit */
 				/* Make sure we're not leaving uncaptured
 				 * ones */
@@ -499,12 +489,17 @@ int dateadd(struct event *event, datefile *file) {
 		}
 		/* Report a prefix */
 		if (dateaddbit(file, lower, 64-precision,
-					id, nextsmptr, &newnextsmptr)) {
+					id, nextsmptr, &nextsmptr)) {
 			return -1;
 		}
-		nextsmptr = newnextsmptr;
 		/* Update lower bound */
 		++lower;
+	}
+
+	/* Set event data head */
+	if (seek(file->file, data.firstev_pos, SEEK_SET) == -1 ||
+	    writeu64(nextsmptr, file->file) == -1) {
+		return -1;
 	}
 
 	return 0;
@@ -559,35 +554,35 @@ static int datesearchrecursive(datefile *file, struct eventlist *events,
 	}
 
 	/* Read the fields */
-	if (fseek(file->file, ptr, SEEK_SET) == -1) {
+	if (seek(file->file, ptr, SEEK_SET) == -1) {
 		return -1;
 	}
-	uint64_t child0, child1, headptr;
-	if (readu64(&child0, file->file) ||
-	    readu64(&child1, file->file) ||
-	    readu64(&headptr, file->file)) {
+	struct df_node node;
+	if (read_df_node(&node, file->file) == -1) {
 		return -1;
 	}
 
-	if (headptr != 0) {
-		readtime(file, events, headptr);
+	/* If there is an event, read it */
+	if (node.event != 0) {
+		readtime(file, events, node.event);
 	}
 
 	/* Recurse with one more level of precision */
 	if (datesearchrecursive(file, events, start, end,
 				prefix,
-				precision+1, child0) ||
+				precision+1, node.child0) ||
 	    datesearchrecursive(file, events, start, end,
 				prefix | (1lu << (file->bitn-precision-1)),
-				precision+1, child1)) {
+				precision+1, node.child1)) {
 		return -1;
 	}
 
 	return 0;
 }
 
+/* Reads an event struct */
 static int readtime(datefile *file, struct eventlist *events, uint64_t ptr) {
-	if (fseek(file->file, ptr, SEEK_SET) == -1) {
+	if (seek(file->file, ptr, SEEK_SET) == -1) {
 		return -1;
 	}
 
@@ -606,11 +601,9 @@ static int readtime(datefile *file, struct eventlist *events, uint64_t ptr) {
 			events->events = newevents;
 		}
 
-		uint64_t prev, next, nextsm, dataptr;
-		if (readu64(&next, file->file) ||
-		    readu64(&prev, file->file) ||
-		    readu64(&nextsm, file->file) ||
-		    readu64(&dataptr, file->file)) {
+		/* uint64_t prev, next, nextsm, dataptr; */
+		struct df_event rawevent;
+		if (read_df_event(&rawevent, file->file) == -1) {
 			return -1;
 		}
 
@@ -618,40 +611,31 @@ static int readtime(datefile *file, struct eventlist *events, uint64_t ptr) {
 		 * TODO: Use a hashmap or some other O(1) data structure for
 		 * this */
 		for (int i = 0; i < events->len; ++i) {
-			if (events->events[i].id == dataptr) {
+			if (events->events[i].id == rawevent.ptr) {
 				goto next;
 			}
 		}
 
-		if (fseek(file->file, dataptr, SEEK_SET) == -1) {
+		if (seek(file->file, rawevent.ptr, SEEK_SET) == -1) {
 			return -1;
 		}
 
 		struct event *event = events->events + (events->len++);
-		uint64_t functions, firstev, start, end, len;
-		if (readu64(&functions, file->file) ||
-		    readu64(&firstev, file->file) ||
-		    readu64(&start, file->file) ||
-		    readu64(&end, file->file) ||
-		    readu64(&len, file->file)) {
+		struct df_event_data data;
+		if (read_df_event_data(&data, file->file) == -1) {
 			return -1;
 		}
-		event->start = us64(start);
-		event->end = us64(end);
-		if ((event->name = malloc(len+1)) == NULL) {
-			return -1;
-		}
-		if (fread(event->name, len, 1, file->file) < 1) {
-			return -1;
-		}
-		event->name[len] = '\0';
-		event->id = dataptr;
+		/* uint64_t functions, firstev, start, end, len; */
+		event->start = data.start;
+		event->end = data.end;
+		event->name = data.name;
+		event->id = rawevent.ptr;
 
 next:
-		if (next == 0) {
+		if (rawevent.next == 0) {
 			break;
 		}
-		if (fseek(file->file, next, SEEK_SET) == -1) {
+		if (seek(file->file, rawevent.next, SEEK_SET) == -1) {
 			return -1;
 		}
 	}
@@ -670,7 +654,16 @@ void freeeventlist(struct eventlist *list) {
 }
 
 int dateremove(datefile *file, uint64_t id) {
-	uint64_t iter = id;
+	uint64_t iter;
+	struct df_event_data data;
+
+	/* Read the event data */
+	if (read_df_event_data(&data, file->file)) {
+		return -1;
+	}
+
+	/* Remove pointers to every event that points to this event data */
+	iter = data.firstev;
 	while (iter != 0) {
 		if (eventremove(file, iter, &iter)) {
 			return -1;
@@ -680,21 +673,23 @@ int dateremove(datefile *file, uint64_t id) {
 }
 
 static int eventremove(datefile *file, uint64_t id, uint64_t *nextsmret) {
-	uint64_t prev, next;
-	if (fseek(file->file, id, SEEK_SET) == -1 ||
-	    readu64(&next, file->file) ||
-	    readu64(&prev, file->file) ||
-	    readu64(nextsmret, file->file)) {
+	struct df_event event;
+	/* Read the event */
+	if (seek(file->file, id, SEEK_SET) == -1 ||
+	    read_df_event(&event, file->file) == -1) {
 		return -1;
 	}
+	*nextsmret = event.nextsm;
 
-	if (fseek(file->file, prev, SEEK_SET) == -1 ||
-	    writeu64(next, file->file)) {
+	/* Update the previous node's next pointer */
+	if (seek(file->file, event.prev, SEEK_SET) == -1 ||
+	    writeu64(event.next, file->file) == -1) {
 		return -1;
 	}
-	if (next != 0 &&
-		(fseek(file->file, next+8, SEEK_SET) == -1 ||
-		 writeu64(prev, file->file))) {
+	/* Update the next node's prev pointer*/
+	if (event.next != 0 &&
+	    (seek(file->file, event.next+8, SEEK_SET) == -1 ||
+	    writeu64(event.prev, file->file))) {
 		return -1;
 	}
 	return 0;
@@ -721,3 +716,5 @@ int datestest(int *passed, int *total) {
 	return 1;
 }
 #endif
+
+#pragma GCC diagnostic pop

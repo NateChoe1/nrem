@@ -2,6 +2,7 @@
 
 #include <util.h>
 #include <tests.h>
+#include <interfaces.h>
 
 static int monthlens[] = {
 	31,
@@ -43,13 +44,7 @@ int getweeks(int year, int month) {
 	if (month < 0 || month >= 12) {
 		return -1;
 	}
-	if (month == 2) {
-		/* Leap years */
-		monthlen = year % 4 ? 28 : year % 100 ? 29 : year % 400 ? 28:29;
-	}
-	else {
-		monthlen = monthlens[month];
-	}
+	monthlen = getmonthlen(year, month);
 
 	if ((firstday = getfirstday(year, month)) < 0) {
 		return -1;
@@ -69,6 +64,54 @@ int getweeks(int year, int month) {
 	return ret;
 }
 
+int getmonthlen(int year, int month) {
+	if (month == 2) {
+		/* Leap years */
+		return year % 4 ? 28 : year % 100 ? 29 : year % 400 ? 28:29;
+	}
+	else {
+		return monthlens[month];
+	}
+}
+
+time_t findstart(int day, int month, int year) {
+	/* Best guess of the start */
+	struct tm baseline = {
+		.tm_sec = 0,
+		.tm_min = 0,
+		.tm_hour = 0,
+		.tm_mday = day + 1,
+		.tm_mon = month,
+		.tm_year = year - 1900,
+		.tm_isdst = -1,
+		.tm_gmtoff = nowb.tm_gmtoff,
+	};
+	time_t guess = mktime(&baseline);
+
+	/* We assume that the guess at least has the same GMT offset as the real
+	 * date */
+	struct tm *real = localtime(&guess);
+	real->tm_sec = real->tm_min = real->tm_hour = 0;
+	real->tm_mday = day + 1;
+	real->tm_mon = month;
+	real->tm_year = year - 1900;
+	
+	return mktime(real);
+}
+
+/* The end of a given day is 1 second before the start of the next */
+time_t findend(int day, int month, int year) {
+	if (day+1 >= getmonthlen(year, month)) {
+		day = 0;
+		++month;
+		if (month >= 12) {
+			month = 0;
+			++year;
+		}
+	}
+	return findstart(day, month, year)-1;
+}
+
 #ifdef NREM_TESTS
 int utiltest(int *passed, int *total) {
 	NREM_ASSERT(getfirstday(2023, 8) == 5);
@@ -76,6 +119,7 @@ int utiltest(int *passed, int *total) {
 
 	NREM_ASSERT(getfirstday(2023, 11) == 5);
 	NREM_ASSERT(getweeks(2023, 11) == 6);
+
 	return 0;
 }
 #else

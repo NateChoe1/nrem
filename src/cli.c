@@ -40,7 +40,7 @@ static int nremcliadd(int argc, char **argv) {
 				argv[0]);
 		return 1;
 	}
-	
+
 	event.name = argv[1];
 
 	event.start = parsetime(argv[2]);
@@ -75,7 +75,7 @@ static int nremclisearch(int argc, char **argv) {
 		return 1;
 	}
 	/* This code is awful, do not copy it */
-	for (long i = 0; i < list->len; ++i) {
+	for (int i = 0; i < list->len; ++i) {
 		char part[50];
 		int partlen;
 		int pcount;
@@ -125,6 +125,10 @@ static int nremcliremove(int argc, char **argv) {
 static int printpart(struct event *ev, char *part) {
 	time_t t = (time_t) ev->start;
 	struct tm *tm = localtime(&t);
+	if (tm == NULL) {
+		fprintf(stderr, "Failed to convert timestamp %ld\n", ev->start);
+		return -1;
+	}
 	if (strcmp(part, "DATE") == 0) {
 		printf("%04d-%02d-%02d",
 				tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday);
@@ -155,5 +159,5 @@ static int printpart(struct event *ev, char *part) {
 		return 0;
 	}
 	fprintf(stderr, "Invalid format part %s\n", part);
-	return 1;
+	return -1;
 }

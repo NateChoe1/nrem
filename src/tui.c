@@ -122,16 +122,10 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 			if (currday > 0 || j >= firstday) {
 				++currday;
 
-				/*
 				time_t start, end;
-				struct tm tm;
-				tm.tm_sec = tm.tm_min = tm.tm_hour = 0;
-				tm.tm_mday = currday;
-				tm.tm_mon = month;
-				tm.tm_year = year - 1900;
-				tm.tm_isdst = -1;
-				*/
-				events = datesearch(&f, 0, 1000000000000l);
+				start = findstart(currday-1, month, year);
+				end = findend(currday-1, month, year);
+				events = datesearch(&f, start, end);
 			}
 			for (int r = 0; r < boxheight; ++r) {
 				wmove(win, topmargin + i*boxheight+r,
