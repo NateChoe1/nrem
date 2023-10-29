@@ -101,7 +101,8 @@ time_t findstart(int day, int month, int year) {
 
 /* The end of a given day is 1 second before the start of the next */
 time_t findend(int day, int month, int year) {
-	if (day+1 >= getmonthlen(year, month)) {
+	++day;
+	if (day >= getmonthlen(year, month)) {
 		day = 0;
 		++month;
 		if (month >= 12) {
@@ -109,7 +110,7 @@ time_t findend(int day, int month, int year) {
 			++year;
 		}
 	}
-	return findstart(day, month, year)-1;
+	return findstart(day+1, month, year)-1;
 }
 
 #ifdef NREM_TESTS

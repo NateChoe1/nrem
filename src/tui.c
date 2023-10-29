@@ -112,20 +112,22 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 
 	int weeks = getweeks(year, month);
 	int firstday = getfirstday(year, month);
-	int currday = 0;
 	int cursorx, cursory;
+	int monthlen = getmonthlen(year, month);
 	cursorx = cursory = -1;
 
 	for (int i = 0; i < weeks; ++i) {
 		for (int j = 0; j < 7; ++j) {
 			struct eventlist *events = NULL;
-			if (currday > 0 || j >= firstday) {
-				++currday;
-
+			int currday = i*7 + j + 1 - firstday;
+			if (1 <= currday && currday <= monthlen) {
 				time_t start, end;
 				start = findstart(currday-1, month, year);
 				end = findend(currday-1, month, year);
 				events = datesearch(&f, start, end);
+			}
+			else {
+				currday = 0;
 			}
 			for (int r = 0; r < boxheight; ++r) {
 				wmove(win, topmargin + i*boxheight+r,
