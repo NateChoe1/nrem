@@ -131,6 +131,9 @@ int tui_newevent(enum tui_state *state, WINDOW *win) {
 		goto next;
 	case KEY_BTAB: case KEY_UP: case KEY_PPAGE: case KEY_SR:
 		goto prev;
+	case KEY_ESCAPE:
+		*state = VIEWCAL;
+		return 0;
 	default:
 		break;
 	}

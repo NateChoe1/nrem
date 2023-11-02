@@ -63,7 +63,7 @@ int nremtui(int argc, char **argv) {
 	};
 	int (*resets[])(WINDOW *win) = {
 		[VIEWCAL] = NULL,
-		[VIEWDAY] = NULL,
+		[VIEWDAY] = tui_viewday_reset,
 		[NEWEVENT] = tui_newevent_reset,
 	};
 
@@ -72,8 +72,8 @@ int nremtui(int argc, char **argv) {
 			if ((ret = resets[state](win)) != 0) {
 				goto end;
 			}
-			prevstate = state;
 		}
+		prevstate = state;
 		if (modes[state] != NULL) {
 			if ((ret = modes[state](&state, win)) != 0) {
 				goto end;

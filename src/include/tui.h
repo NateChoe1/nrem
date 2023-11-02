@@ -3,6 +3,8 @@
 
 #include <curses.h>
 
+#define KEY_ESCAPE '\x1b'
+
 enum tui_state {
 	VIEWCAL,
 	VIEWDAY,
@@ -16,6 +18,7 @@ int tui_cal(enum tui_state *state, WINDOW *win);
 int tui_viewday(enum tui_state *state, WINDOW *win);
 int tui_newevent(enum tui_state *state, WINDOW *win);
 
+int tui_viewday_reset(WINDOW *win);
 int tui_newevent_reset(WINDOW *win);
 
 /* Draws a calendar, filling the specified area. -1 for w or h means fill the
