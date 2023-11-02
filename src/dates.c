@@ -657,6 +657,11 @@ int dateremove(datefile *file, uint64_t id) {
 	uint64_t iter;
 	struct df_event_data data;
 
+	/* Go to the event data */
+	if (seek(file->file, id, SEEK_SET) == -1) {
+		return -1;
+	}
+
 	/* Read the event data */
 	if (read_df_event_data(&data, file->file)) {
 		return -1;
