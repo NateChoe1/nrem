@@ -13,6 +13,7 @@ enum tui_state {
 extern int tui_day, tui_mon, tui_year;
 
 int tui_cal(enum tui_state *state, WINDOW *win);
+int tui_viewday(enum tui_state *state, WINDOW *win);
 int tui_newevent(enum tui_state *state, WINDOW *win);
 
 int tui_newevent_reset(WINDOW *win);

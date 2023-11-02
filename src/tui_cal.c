@@ -56,6 +56,9 @@ int tui_cal(enum tui_state *state, WINDOW *win) {
 		tui_day = 0;
 		--tui_mon;
 		break;
+	case '\n': case KEY_ENTER:
+		*state = VIEWDAY;
+		return 0;
 	}
 
 	normdate(&tui_day, &tui_mon, &tui_year);

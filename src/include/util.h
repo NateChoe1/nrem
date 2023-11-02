@@ -15,13 +15,38 @@ int getweeks(int year, int month);
 /* Gets the length of a month */
 int getmonthlen(int year, int month);
 
-/* Finds the start and end of a day */
-time_t findstart(int day, int month, int year);
-time_t findend(int day, int month, int year);
-
 void normdate(int *day, int *month, int *year);
 
 int utiltest(int *passed, int *total);
+
+/* Finds the start and end of a day */
+static inline time_t findstart(int day, int month, int year) {
+	struct tm tm = {
+		.tm_sec = 0,
+		.tm_min = 0,
+		.tm_hour = 0,
+		.tm_mday = day + 1,
+		.tm_mon = month,
+		.tm_year = year - 1900,
+		.tm_isdst = -1,
+		.tm_gmtoff = 0,
+	};
+	return mktime(&tm);
+}
+
+/* The end of a given day is 1 second before the start of the next */
+static inline time_t findend(int day, int month, int year) {
+	++day;
+	if (day >= getmonthlen(year, month)) {
+		day = 0;
+		++month;
+		if (month >= 12) {
+			month = 0;
+			++year;
+		}
+	}
+	return findstart(day, month, year)-1;
+}
 
 static inline int isinvalid(int year, int mon, int day,
 		int hr, int min, int sec) {

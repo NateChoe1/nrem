@@ -58,7 +58,7 @@ int nremtui(int argc, char **argv) {
 
 	int (*modes[])(enum tui_state *state, WINDOW *win) = {
 		[VIEWCAL] = tui_cal,
-		[VIEWDAY] = NULL,
+		[VIEWDAY] = tui_viewday,
 		[NEWEVENT] = tui_newevent,
 	};
 	int (*resets[])(WINDOW *win) = {
