@@ -1,11 +1,11 @@
 #include <curses.h>
 
+#include <tui.h>
 #include <util.h>
 #include <interfaces.h>
 
-static void displaycal(WINDOW *win, int day, int month, int year);
-
-static char *months[] = {
+int tui_day, tui_mon, tui_year;
+char const * const months[] = {
 	"January",
 	"February",
 	"March",
@@ -19,7 +19,7 @@ static char *months[] = {
 	"November",
 	"December",
 };
-static char *weekdays[] = {
+char const * const weekdays[] = {
 	"Sunday",
 	"Monday",
 	"Tuesday",
@@ -28,76 +28,101 @@ static char *weekdays[] = {
 	"Friday",
 	"Saturday",
 };
+int tui_hascolor;
 static int dump;
 
 int nremtui(int argc, char **argv) {
-	WINDOW *cal;
-
-	int day = 1;
-	int month = nowb.tm_mon;
-	int year = nowb.tm_year + 1900;
+	WINDOW *win;
+	enum tui_state state, prevstate;
+	int ret;
 
 	initscr();
 	cbreak();
 	noecho();
 	refresh(); /* I have no idea why this line is necessary */
 
-	cal = newwin(0, 0, 0, 0);
+	win = newwin(0, 0, 0, 0);
+
+	keypad(win, TRUE);
+	nl();
+
+	state = prevstate = VIEWCAL;
+
+	tui_day = nowb.tm_mday - 1;
+	tui_mon = nowb.tm_mon;
+	tui_year = nowb.tm_year + 1900;
+	if ((tui_hascolor = has_colors())) {
+		start_color();
+		init_pair(COL_BRIGHT, COLOR_WHITE, COLOR_BLUE);
+	}
+
+	int (*modes[])(enum tui_state *state, WINDOW *win) = {
+		[VIEWCAL] = tui_cal,
+		[VIEWDAY] = NULL,
+		[NEWEVENT] = tui_newevent,
+	};
+	int (*resets[])(WINDOW *win) = {
+		[VIEWCAL] = NULL,
+		[VIEWDAY] = NULL,
+		[NEWEVENT] = tui_newevent_reset,
+	};
 
 	for (;;) {
-		displaycal(cal, day, month, year);
-
-		int c = getch();
-
-		switch (c) {
-		case 'q':
+		if (state != prevstate && resets[state] != NULL) {
+			if ((ret = resets[state](win)) != 0) {
+				goto end;
+			}
+			prevstate = state;
+		}
+		if (modes[state] != NULL) {
+			if ((ret = modes[state](&state, win)) != 0) {
+				goto end;
+			}
+		}
+		else {
+			ret = 1;
 			goto end;
-		case 'h':
-			--day;
-			break;
-		case 'l':
-			++day;
-			break;
+		}
+		if (state == DONE) {
+			ret = 0;
+			goto end;
 		}
 	}
 
 end:
 	endwin();
-	return 0;
+	return ret;
 }
 
-static void displaycal(WINDOW *win, int day, int month, int year) {
-	char header[50];
-	int headerlen;
-	int w, h;
+void tui_calwidget(WINDOW *win, int top, int left, int w, int h,
+		int year, int mon, int day) {
+	int winw, winh;
+	getmaxyx(win, winh, winw);
 
-	headerlen = snprintf(header, sizeof header,
-			"%s, %d", months[month], year);
-	header[sizeof header - 1] = '\0';
-	if (headerlen < 0) {
-		return;
+	if (w < 0) {
+		w = winw - left;
+	}
+	if (h < 0) {
+		h = winh - top;
 	}
 
-	getmaxyx(win, h, w);
-	mvwaddstr(win, 0, w/2 - headerlen/2, header);
-
 	int boxwidth = (w-1)/7;
-	int boxheight = (h-3)/6;
+	int boxheight = (h-1)/6;
 	int calwidth = boxwidth*7+1;
-	int leftmargin = (w - calwidth) / 2;
-	int topmargin = 3;
-	wmove(win, 1, leftmargin+1);
+	int leftmargin = left + (w - calwidth) / 2;
+	int topmargin = top + 2;
+	wmove(win, top, leftmargin+1);
 	wattron(win, A_UNDERLINE);
 	for (int i = 0; i < calwidth-2; ++i) {
 		waddch(win, ' ');
 	}
 	wattroff(win, A_UNDERLINE);
-	wmove(win, 2, leftmargin);
+	wmove(win, top + 1, leftmargin);
 	waddch(win, '|');
 	wattron(win, A_UNDERLINE);
 	for (int i = 0; i < 7; ++i) {
 		int curx;
-		wmove(win, 2, i * boxwidth + leftmargin + 1);
+		wmove(win, top + 1, i * boxwidth + leftmargin + 1);
 		waddstr(win, weekdays[i]);
 		for (getyx(win, dump, curx);
 				curx < (i+1) * boxwidth + leftmargin;
@@ -110,33 +135,37 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 		waddch(win, '|');
 	}
 
-	int weeks = getweeks(year, month);
-	int firstday = getfirstday(year, month);
+	int weeks = getweeks(year, mon);
+	int firstday = getfirstday(year, mon);
 	int cursorx, cursory;
-	int monthlen = getmonthlen(year, month);
+	int monthlen = getmonthlen(year, mon);
 	cursorx = cursory = -1;
 
 	for (int i = 0; i < weeks; ++i) {
 		for (int j = 0; j < 7; ++j) {
 			struct eventlist *events = NULL;
-			int currday = i*7 + j + 1 - firstday;
-			if (1 <= currday && currday <= monthlen) {
+			int currday = i*7 + j - firstday;
+			if (0 <= currday && currday < monthlen) {
 				time_t start, end;
-				start = findstart(currday-1, month, year);
-				end = findend(currday-1, month, year);
+				start = findstart(currday, mon, year);
+				end = findend(currday, mon, year);
 				events = datesearch(&f, start, end);
 			}
 			else {
-				currday = 0;
+				currday = -1;
 			}
 			for (int r = 0; r < boxheight; ++r) {
 				wmove(win, topmargin + i*boxheight+r,
 						leftmargin + j*boxwidth);
 				waddch(win, '|');
 
+				if (currday == day && tui_hascolor) {
+					wattron(win, COLOR_PAIR(COL_BRIGHT));
+				}
 				if (r == boxheight-1) {
 					wattron(win, A_UNDERLINE);
 				}
+
 				int cy, cx;
 				getyx(win, cy, cx);
 
@@ -145,9 +174,9 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 					cursorx = cx;
 				}
 
-				if (currday != 0 && r == 0) {
+				if (currday != -1 && r == 0) {
 					char date[20];
-					sprintf(date, "%d", currday);
+					sprintf(date, "%d", currday+1);
 					waddnstr(win, date, boxwidth-1);
 				}
 				if (events != NULL &&
@@ -163,6 +192,9 @@ static void displaycal(WINDOW *win, int day, int month, int year) {
 					waddch(win, ' ');
 				}
 				wattroff(win, A_UNDERLINE);
+				if (currday == day && tui_hascolor) {
+					wattroff(win, COLOR_PAIR(COL_BRIGHT));
+				}
 				waddch(win, '|');
 			}
 			freeeventlist(events);

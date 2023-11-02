@@ -65,7 +65,7 @@ int getweeks(int year, int month) {
 }
 
 int getmonthlen(int year, int month) {
-	if (month == 2) {
+	if (month == 1) {
 		/* Leap years */
 		return year % 4 ? 28 : year % 100 ? 29 : year % 400 ? 28:29;
 	}
@@ -111,6 +111,41 @@ time_t findend(int day, int month, int year) {
 		}
 	}
 	return findstart(day+1, month, year)-1;
+}
+
+void normdate(int *day, int *month, int *year) {
+	for (;;) {
+		/* Normalize month */
+		if (*month < 0) {
+			*month += 12;
+			--*year;
+			continue;
+		}
+		if (*month >= 12) {
+			*month -= 12;
+			++*year;
+			continue;
+		}
+
+		/* Normalize day */
+		if (*day < 0) {
+			if (--*month < 0) {
+				--*year;
+				*month += 12;
+			}
+			*day = getmonthlen(*year, *month) + *day;
+			continue;
+		}
+		int monthlen = getmonthlen(*year, *month);
+		if (*day >= monthlen) {
+			*day -= monthlen;
+			++*month;
+			continue;
+		}
+
+		/* months and days are normalized, end */
+		break;
+	}
 }
 
 #ifdef NREM_TESTS

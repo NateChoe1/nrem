@@ -118,7 +118,7 @@ T(time,
 		L("AM", noop,
 		L("PM", ret->tm.tm_hour += 12, noop)), E))
 
-T(hour_minute,
+T(hour_minute, ret->tm.tm_hour = ret->tm.tm_min = ret->tm.tm_sec = 0;
 	       R(number, ret->tm.tm_hour = ret->num;
 	L(":", R(number, ret->tm.tm_min = ret->num;
 	L(":", R(number, ret->tm.tm_sec = ret->num, E), noop), E), noop), E))

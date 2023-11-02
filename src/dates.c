@@ -286,7 +286,7 @@ static int dateaddbit(datefile *file, uint64_t prefix, int precision,
 		if (read_df_node(&node, file->file)) {
 			return -1;
 		}
-		next = bit ? node.child0 : node.child1;
+		next = bit ? node.child1 : node.child0;
 
 		/* If the next node down doesn't exist yet, create it */
 		if (next == 0) {
