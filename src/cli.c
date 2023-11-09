@@ -54,7 +54,7 @@ int nremcli(int argc, char **argv) {
 	if (strcmp(argv[1], "defrag") == 0) {
 		return nremclidefrag(argc-1, argv+1);
 	}
-	fprintf(stderr, "Invalid command %s\n", argv[0]);
+	fprintf(stderr, "Invalid command %s\n", argv[1]);
 	return 1;
 }
 
@@ -62,7 +62,7 @@ static int nremcliadd(int argc, char **argv) {
 	struct event event;
 	if (argc < 3) {
 		fprintf(stderr, "Usage: %s [event name] [start] (end)\n",
-				argv[1]);
+				argv[0]);
 		return 1;
 	}
 
@@ -87,7 +87,7 @@ static int nremclisearch(int argc, char **argv) {
 	struct eventlist *list;
 	if (argc < 3) {
 		fprintf(stderr, "Usage: %s [start] [end] (format)\n",
-				argv[1]);
+				argv[0]);
 		return 1;
 	}
 	if (argc >= 4) {
@@ -140,7 +140,7 @@ static int nremclisearch(int argc, char **argv) {
 
 static int nremcliremove(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "Usage: %s [event id]\n", argv[1]);
+		fprintf(stderr, "Usage: %s [event id]\n", argv[0]);
 		return 1;
 	}
 	dateremove(&f, strtoull(argv[1], NULL, 10));
