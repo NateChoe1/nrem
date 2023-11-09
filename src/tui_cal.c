@@ -1,3 +1,23 @@
+/* @LEGAL_HEAD [0]
+ *
+ * nrem, a cli friendly calendar
+ * Copyright (C) 2023  Nate Choe <nate@natechoe.dev>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * @LEGAL_TAIL */
+
 #include <curses.h>
 
 #include <tui.h>
@@ -33,7 +53,7 @@ int tui_cal(enum tui_state *state, WINDOW *win) {
 	case 'q':
 		*state = DONE;
 		return 0;
-	case 'n':
+	case 'N':
 		*state = NEWEVENT;
 		return 0;
 	case 'h': case KEY_LEFT:
@@ -47,6 +67,18 @@ int tui_cal(enum tui_state *state, WINDOW *win) {
 		break;
 	case 'k': case KEY_UP:
 		tui_day -= 7;
+		break;
+	case 'b':
+		tui_day += 6;
+		break;
+	case 'n':
+		tui_day += 8;
+		break;
+	case 'y':
+		tui_day -= 8;
+		break;
+	case 'u':
+		tui_day -= 6;
 		break;
 	case 'L': case 'J':
 		tui_day = 0;

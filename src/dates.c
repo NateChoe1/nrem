@@ -1,3 +1,23 @@
+/* @LEGAL_HEAD [0]
+ *
+ * nrem, a cli friendly calendar
+ * Copyright (C) 2023  Nate Choe <nate@natechoe.dev>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * @LEGAL_TAIL */
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
@@ -102,92 +122,38 @@
  *     };
  * */
 
-#define READ_FUNC(bits) \
-static int readu##bits(uint##bits##_t *ret, FILE *file) { \
-	*ret = 0; \
-	for (int i = 0; i < sizeof *ret; ++i) { \
-		int c; \
- \
-		c = fgetc(file); \
-		if (c < 0) { \
-			return -1; \
-		} \
-		if (c > 0xff) { \
-			return -1; \
-		} \
-		*ret <<= 8; \
-		*ret |= (uint8_t) c; \
-	} \
-	return 0; \
-}
-READ_FUNC(8)
-READ_FUNC(64)
-#undef READ_FUNC
-
-#define WRITE_FUNC(bits) \
-static int writeu##bits(uint##bits##_t val, FILE *file) { \
-	char buff[sizeof val]; \
-	int ret; \
-	for (int i = 0; i < sizeof val; ++i) { \
-		buff[((int) sizeof val) - i - 1] = (char) (val & 0xff); \
-		val >>= 8; \
-	} \
-	ret = fwrite(buff, sizeof buff, 1, file) == 1 ? 0:-1; \
-	return ret; \
-}
-WRITE_FUNC(8)
-WRITE_FUNC(64)
-#undef WRITE_FUNC
-
-/* Unsigned -> signed 64 bit int conversion. 0x80000... is zero */
-static inline int64_t us64(uint64_t v) {
-	if (v & (1llu << 63)) {
-		return (int64_t) (v ^ ((uint64_t) 1llu << 63));
-	}
-	else {
-		/* TODO: Find out how to fix this hack */
-		if (v == 0) {
-			return INT64_MIN;
-		}
-		return -(int64_t) ((1llu << 63) - v);
-	}
-}
-
-/* Opposite of us64 */
-static inline uint64_t su64(int64_t v) {
-	return (1llu << 63) ^ (uint64_t) v;
-}
-
+#define NAMESPACE df_
 #define STRUCTS \
-	X(df_header, \
+	X(header, \
 		Y(PADDING, magic, 8) \
-		Y(U64, bit1, ~) \
+		Y(PTR, bit1, node) \
 		Y(U8, bitn, ~) \
 		Y(PADDING, reserved, 16) \
 	) \
-	X(df_node, \
-		Y(U64, child0, ~) \
-		Y(U64, child1, ~) \
-		Y(U64, event, ~) \
+	X(node, \
+		Y(PTR, child0, node) \
+		Y(PTR, child1, node) \
+		Y(PTR, event, event) \
 		Y(PADDING, reserved, 16) \
 	) \
-	X(df_event, \
-		Y(U64, next, ~) \
-		Y(U64, prev, ~) \
-		Y(U64, nextsm, ~) \
-		Y(U64, ptr, ~) \
+	X(event, \
+		Y(PTR, next, event) \
+		Y(PTR, prev, event) \
+		Y(PTR, nextsm, event) \
+		Y(PTR, ptr, event_data) \
 		Y(PADDING, reserved, 16) \
 	) \
-	X(df_event_data, \
+	X(event_data, \
 		Y(U64, functions, ~) \
-		Y(U64, firstev, ~) \
+		Y(PTR, firstev, event) \
 		Y(I64, start, ~) \
 		Y(I64, end, ~) \
 		Y(STR, name, ~) \
-	) \
+	)
 
 #include "filestruct.h"
 #undef STRUCTS
+#undef NAMESPACE
 
 /* Creates a datefile. This function will truncate `path` */
 static int datecreate(char *path, datefile *ret);
@@ -226,6 +192,10 @@ int dateopen(char *path, datefile *ret) {
 		return -1;
 	}
 
+	if ((ret->path = strdup(path)) == NULL) {
+		return -1;
+	}
+
 	ret->file = file;
 	ret->bit1 = header.bit1;
 	ret->bitn = header.bitn;
@@ -259,6 +229,10 @@ static int datecreate(char *path, datefile *ret) {
 
 	if (seek(file, header.bit1_pos, SEEK_SET) == -1 ||
 	    writeu64(bit1.offset, file) == -1) {
+		return -1;
+	}
+
+	if ((ret->path = strdup(path)) == NULL) {
 		return -1;
 	}
 
@@ -697,6 +671,36 @@ static int eventremove(datefile *file, uint64_t id, uint64_t *nextsmret) {
 	    writeu64(event.prev, file->file))) {
 		return -1;
 	}
+	return 0;
+}
+
+int datedefrag(datefile *file) {
+	FILE *tmp, *newfile;
+	if ((tmp = tmpfile()) == NULL) {
+		return -1;
+	}
+	if (defrag_df_header(0, file->file, tmp)) {
+		return -1;
+	}
+	if ((newfile = fopen(file->path, "wb+")) == NULL) {
+		return -1;
+	}
+	if (fseek(tmp, 0, SEEK_SET) == -1) {
+		return -1;
+	}
+	for (;;) {
+		int c;
+		c = fgetc(tmp);
+		if (c == EOF) {
+			break;
+		}
+		if (fputc(c, newfile) == EOF) {
+			fclose(tmp);
+			fclose(newfile);
+			return -1;
+		}
+	}
+	fclose(tmp);
 	return 0;
 }
 

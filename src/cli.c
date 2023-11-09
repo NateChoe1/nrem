@@ -1,3 +1,23 @@
+/* @LEGAL_HEAD [0]
+ *
+ * nrem, a cli friendly calendar
+ * Copyright (C) 2023  Nate Choe <nate@natechoe.dev>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * @LEGAL_TAIL */
+
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,12 +30,14 @@
 static int nremcliadd(int argc, char **argv);
 static int nremclisearch(int argc, char **argv);
 static int nremcliremove(int argc, char **argv);
+static int nremclidefrag(int argc, char **argv);
 
 static int printpart(struct event *ev, char *part);
 
 int nremcli(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "Usage: %s [add/search/remove] [options]\n",
+		fprintf(stderr,
+"Usage: %s [add/search/remove/defrag] [options]\n",
 				argv[0]);
 		return 1;
 	}
@@ -29,6 +51,9 @@ int nremcli(int argc, char **argv) {
 	if (strcmp(argv[1], "remove") == 0) {
 		return nremcliremove(argc-1, argv+1);
 	}
+	if (strcmp(argv[1], "defrag") == 0) {
+		return nremclidefrag(argc-1, argv+1);
+	}
 	fprintf(stderr, "Invalid command %s\n", argv[0]);
 	return 1;
 }
@@ -37,7 +62,7 @@ static int nremcliadd(int argc, char **argv) {
 	struct event event;
 	if (argc < 3) {
 		fprintf(stderr, "Usage: %s [event name] [start] (end)\n",
-				argv[0]);
+				argv[1]);
 		return 1;
 	}
 
@@ -62,7 +87,7 @@ static int nremclisearch(int argc, char **argv) {
 	struct eventlist *list;
 	if (argc < 3) {
 		fprintf(stderr, "Usage: %s [start] [end] (format)\n",
-				argv[0]);
+				argv[1]);
 		return 1;
 	}
 	if (argc >= 4) {
@@ -115,11 +140,15 @@ static int nremclisearch(int argc, char **argv) {
 
 static int nremcliremove(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "Usage: %s [event id]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [event id]\n", argv[1]);
 		return 1;
 	}
 	dateremove(&f, strtoull(argv[1], NULL, 10));
 	return 0;
+}
+
+static int nremclidefrag(int argc, char **argv) {
+	return datedefrag(&f);
 }
 
 static int printpart(struct event *ev, char *part) {

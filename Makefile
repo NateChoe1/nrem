@@ -4,7 +4,7 @@ INSTALLDIR = /usr/bin
 
 LIBS = ncurses
 _CFLAGS = $(CFLAGS) -Isrc/include $(shell pkg-config --cflags $(LIBS))
-__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -Wshadow -Wconversion -Wimplicit-fallthrough=4
+__CFLAGS = $(_CFLAGS) -Wall -Wpedantic -Wshadow -Wconversion -Wimplicit-fallthrough=4 -Wno-unused-function
 LDFLAGS =
 _LDFLAGS = $(LDFLAGS) $(shell pkg-config --libs $(LIBS))
 __LDFLAGS = $(_LDFLAGS)
